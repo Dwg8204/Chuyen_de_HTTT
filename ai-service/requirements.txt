@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+motor
+pymongo
+implicit
+scikit-learn
+numpy
+scipy
+pandas
+python-dotenv
+httpx
+matplotlib

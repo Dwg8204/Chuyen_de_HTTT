@@ -1,0 +1,9 @@
+pandas
+pymongo
+rapidfuzz
+scikit-learn
+numpy
+tqdm
+python-dotenv
+bcrypt
+unidecode
