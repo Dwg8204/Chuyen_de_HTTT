@@ -13,7 +13,7 @@ from tqdm import tqdm
 MUSIC_INFO_FILE    = "raw/Music Info.csv"
 HISTORY_FILE       = "raw/User Listening History.csv"
 OUTPUT_DIR         = "processed"
-MAX_USERS          = 5_000     # Lấy top N user có nhiều lượt nghe nhất
+MAX_USERS          = 100_000     # Lấy top N user có nhiều lượt nghe nhất
 MIN_PLAYS          = 1         # Loại bỏ cặp (user, track) có play_count < N
 RANDOM_SEED        = 42
 
