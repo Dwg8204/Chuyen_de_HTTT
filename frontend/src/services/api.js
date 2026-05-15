@@ -39,9 +39,11 @@ export const usersApi = {
 
 // ── Tracks ────────────────────────────────────────────────────────────────────
 export const tracksApi = {
-  search:        (q, limit = 20) => api.get('/tracks/search', { params: { q, limit } }),
-  getById:       (id)            => api.get(`/tracks/${id}`),
-  itunesPreview: (id)            => api.get(`/tracks/${id}/itunes-preview`),
+  search:        (q, limit = 20, genre = '')  => api.get('/tracks/search', { params: { q, limit, ...(genre ? { genre } : {}) } }),
+  genres:        ()                           => api.get('/tracks/genres'),
+  artists:       (q, limit = 10)             => api.get('/tracks/artists', { params: { q, limit } }),
+  getById:       (id)                         => api.get(`/tracks/${id}`),
+  itunesPreview: (id)                         => api.get(`/tracks/${id}/itunes-preview`),
 };
 
 // ── Play ──────────────────────────────────────────────────────────────────────
@@ -52,6 +54,8 @@ export const playApi = {
 // ── Recommendations ───────────────────────────────────────────────────────────
 export const recApi = {
   hybrid:  ()        => api.get('/recommendations'),
+  collab:  ()        => api.get('/recommendations/collab'),
+  content: ()        => api.get('/recommendations/content'),
   similar: (trackId) => api.get(`/recommendations/similar/${trackId}`),
 };
 
@@ -59,6 +63,7 @@ export const recApi = {
 export const adminApi = {
   stats:           ()                      => api.get('/admin/stats'),
   triggerTraining: ()                      => api.post('/admin/trigger-training'),
+  trainStatus:     ()                      => api.get('/admin/train-status'),
   evaluate:        ()                      => api.get('/admin/evaluate'),
   evaluateCb:      ()                      => api.get('/admin/evaluate/cb'),
   listUsers:       (page = 1, limit = 20)  => api.get('/admin/users', { params: { page, limit } }),
