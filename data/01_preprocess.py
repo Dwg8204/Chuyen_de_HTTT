@@ -13,9 +13,11 @@ from tqdm import tqdm
 MUSIC_INFO_FILE    = "raw/Music Info.csv"
 HISTORY_FILE       = "raw/User Listening History.csv"
 OUTPUT_DIR         = "processed"
-MAX_USERS          = 100_000     # Lấy top N user có nhiều lượt nghe nhất
-MIN_PLAYS          = 1         # Loại bỏ cặp (user, track) có play_count < N
-RANDOM_SEED        = 42
+MAX_USERS                = 100_000  # Lấy top N user có nhiều lượt nghe nhất
+MIN_PLAYS                = 1        # Loại bỏ cặp (user, track) có play_count < N
+MIN_USER_UNIQUE_TRACKS   = 30       # User phải nghe >= N bài KHÁC NHAU
+MIN_TRACK_TOTAL_PLAYS    = 50       # Track phải có tổng plays > N (chỉ đếm từ user hợp lệ)
+RANDOM_SEED              = 42
 
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
@@ -56,14 +58,22 @@ def genre_heuristic(row) -> list:
     return tags or ['pop']
 
 def content_vector(row) -> list:
+    """12-dimensional content vector từ audio features."""
+    loudness_norm = (safe_float(row.get('loudness', -30)) + 60) / 60
+    loudness_norm = max(0.0, min(1.0, loudness_norm))
     return [
-        safe_float(row.get('danceability',  .5)),
-        safe_float(row.get('energy',        .5)),
-        safe_float(row.get('valence',       .5)),
-        safe_float(row.get('tempo',       120)) / 250.0,
-        safe_float(row.get('acousticness',  .5)),
-        safe_float(row.get('liveness',      .5)),
-        safe_float(row.get('speechiness',   .5)),
+        safe_float(row.get('danceability',     .5)),         # 1. rhythmic quality
+        safe_float(row.get('energy',           .5)),         # 2. intensity
+        safe_float(row.get('valence',          .5)),         # 3. positivity / mood
+        safe_float(row.get('tempo',          120)) / 250.0, # 4. tempo (normalized)
+        safe_float(row.get('acousticness',     .5)),         # 5. acoustic vs electric
+        safe_float(row.get('liveness',         .5)),         # 6. live recording feel
+        safe_float(row.get('speechiness',      .5)),         # 7. vocal / speech content
+        safe_float(row.get('instrumentalness',  0)),         # 8. instrumental quality
+        loudness_norm,                                       # 9. loudness (normalized)
+        safe_float(row.get('mode',              1)),         # 10. major(1) vs minor(0)
+        safe_float(row.get('key',               5)) / 11.0, # 11. musical key (0-11 -> 0-1)
+        (safe_float(row.get('time_signature',   4)) - 1) / 7.0,  # 12. time sig
     ]
 
 
@@ -129,23 +139,64 @@ def main():
 
     # 3. Lấy top MAX_USERS user có tổng lượt nghe nhiều nhất
     user_totals = history_df.groupby('user_id')['play_count'].sum()
-    top_users   = user_totals.nlargest(MAX_USERS).index
+    top_users   = set(user_totals.nlargest(MAX_USERS).index)
     history_df  = history_df[history_df['user_id'].isin(top_users)]
     log.info(f"  Top {MAX_USERS} users → {len(history_df):,} interactions")
 
-    # 4. Chỉ giữ tracks có ít nhất 1 interaction
+    # 4. Lọc qua lại (iterative) cho đến khi tập user & track ổn định
+    #    - User  : phải nghe >= MIN_USER_UNIQUE_TRACKS bài KHÁC NHAU
+    #    - Track : tổng plays (chỉ đếm từ user hợp lệ) phải > MIN_TRACK_TOTAL_PLAYS
+    #    Vòng lặp đảm bảo: khi loại track → user có thể mất bài → có thể bị loại,
+    #                       khi loại user  → track mất plays   → có thể bị loại.
+    log.info(f"  Bat dau loc iterative: MIN_USER_UNIQUE_TRACKS={MIN_USER_UNIQUE_TRACKS}, "
+             f"MIN_TRACK_TOTAL_PLAYS={MIN_TRACK_TOTAL_PLAYS}")
+    iteration = 0
+    while True:
+        iteration += 1
+        n_users_before  = history_df['user_id'].nunique()
+        n_tracks_before = history_df['track_id'].nunique()
+
+        # Bước 4a: Lọc user — chỉ giữ user nghe >= MIN_USER_UNIQUE_TRACKS bài khác nhau
+        user_unique_tracks = history_df.groupby('user_id')['track_id'].nunique()
+        active_users = set(user_unique_tracks[user_unique_tracks >= MIN_USER_UNIQUE_TRACKS].index)
+        history_df = history_df[history_df['user_id'].isin(active_users)]
+
+        # Bước 4b: Lọc track — chỉ giữ track có tổng plays (từ user hợp lệ) > MIN_TRACK_TOTAL_PLAYS
+        track_total_plays = history_df.groupby('track_id')['play_count'].sum()
+        active_tracks = set(track_total_plays[track_total_plays > MIN_TRACK_TOTAL_PLAYS].index)
+        history_df = history_df[history_df['track_id'].isin(active_tracks)]
+
+        n_users_after  = history_df['user_id'].nunique()
+        n_tracks_after = history_df['track_id'].nunique()
+        log.info(f"  Iteration {iteration}: users {n_users_before:,}->{n_users_after:,} | "
+                 f"tracks {n_tracks_before:,}->{n_tracks_after:,}")
+
+        # Dừng khi không còn gì thay đổi
+        if n_users_after == n_users_before and n_tracks_after == n_tracks_before:
+            break
+
+    log.info(f"  Sau loc iterative: {history_df['user_id'].nunique():,} users | "
+             f"{history_df['track_id'].nunique():,} tracks | "
+             f"{len(history_df):,} interactions")
+
+    # 5. Cập nhật danh sách user và track còn lại
     active_track_ids = set(history_df['track_id'].unique())
     music_df = music_df[music_df['track_id'].isin(active_track_ids)].reset_index(drop=True)
-    log.info(f"  Tracks có interaction: {len(music_df):,}")
+    log.info(f"  Tracks co interaction: {len(music_df):,}")
 
-    # 5. Tạo index mapping
+    # 6. Tạo index mapping (dùng user/track còn lại sau lọc)
     track_id_to_idx = {tid: i for i, tid in enumerate(music_df['track_id'])}
-    user_ids        = list(top_users[:MAX_USERS])
+    user_ids        = list(history_df['user_id'].unique())
     user_id_to_idx  = {uid: i for i, uid in enumerate(user_ids)}
 
-    # 6. Build tracks.json
+    # 7. Build tracks.json
     log.info("Building tracks.json ...")
-    audio_feats = ['danceability','energy','valence','tempo','acousticness','liveness','speechiness']
+    # 12-dimensional audio features (expanded)
+    audio_feats = [
+        'danceability', 'energy', 'valence', 'tempo',
+        'acousticness', 'liveness', 'speechiness',
+        'instrumentalness', 'loudness', 'mode', 'key', 'time_signature',
+    ]
     tracks = []
     for _, row in tqdm(music_df.iterrows(), total=len(music_df), desc="Tracks"):
         t = {
@@ -168,7 +219,7 @@ def main():
         }
         tracks.append(t)
 
-    # 7. Build users.json
+    # 8. Build users.json
     log.info("Building users.json ...")
     users = []
     for i, uid in enumerate(tqdm(user_ids, desc="Users")):
@@ -188,7 +239,7 @@ def main():
         }
         users.append(u)
 
-    # 8. Build interactions.json + cập nhật total_plays
+    # 9. Build interactions.json + cập nhật total_plays
     log.info("Building interactions.json ...")
     interactions = []
     for _, row in tqdm(history_df.iterrows(), total=len(history_df), desc="Interactions"):
@@ -208,7 +259,7 @@ def main():
     for t in tracks:
         t['popularity'] = min(100, int(t['total_plays'] / max_plays * 100))
 
-    # 9. Lưu file
+    # 10. Lưu file
     log.info("Saving JSON files ...")
     for fname, data in [
         ("tracks.json",       tracks),

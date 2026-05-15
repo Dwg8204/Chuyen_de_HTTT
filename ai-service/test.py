@@ -33,8 +33,8 @@ def main():
         user_unique_items[uid].add(iid)
         item_total_plays[iid] += cnt
 
-    active_users = {u for u, items in user_unique_items.items() if len(items) >= 10}
-    popular_items = {i for i, c in item_total_plays.items() if c >= 50}
+    active_users = {u for u, items in user_unique_items.items() if len(items) >= 0}
+    popular_items = {i for i, c in item_total_plays.items() if c >= 0}
 
     print(f"   -> Giữ lại {len(active_users)} Users và {len(popular_items)} Items")
 
@@ -68,7 +68,7 @@ def main():
     # Sửa dòng này:
     train_user_items_bm25 = bm25_weight(train_user_items, K1=100, B=0.8).tocsr()
     
-    model = implicit.als.AlternatingLeastSquares(factors=64, iterations=30, regularization=0.1, random_state=42)
+    model = implicit.als.AlternatingLeastSquares(factors=32, iterations=30, regularization=0.1, random_state=42)
     # Sửa dòng này:
     model.fit(train_user_items_bm25)
 

@@ -27,7 +27,14 @@ export class AdminService {
 
   async triggerTraining() {
     const res = await firstValueFrom(
-      this.httpService.post(`${this.aiUrl}/ai/train`, {}, { timeout: 600_000 }),
+      this.httpService.post(`${this.aiUrl}/ai/train`, {}, { timeout: 30_000 }),
+    );
+    return res.data;
+  }
+
+  async getTrainStatus() {
+    const res = await firstValueFrom(
+      this.httpService.get(`${this.aiUrl}/ai/train/status`, { timeout: 5_000 }),
     );
     return res.data;
   }

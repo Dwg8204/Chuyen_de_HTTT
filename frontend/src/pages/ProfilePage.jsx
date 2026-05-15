@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { usersApi } from '../services/api';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { usersApi, tracksApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+
 
 const GENRES = [
   { id: 'pop',        label: '🎵 Pop' },
@@ -17,12 +18,7 @@ const GENRES = [
   { id: 'metal',      label: '🤘 Metal' },
 ];
 
-const POPULAR_ARTISTS = [
-  'Taylor Swift', 'Ed Sheeran', 'Drake', 'Billie Eilish', 'The Weeknd',
-  'Ariana Grande', 'Post Malone', 'Dua Lipa', 'BTS', 'Coldplay',
-  'Eminem', 'Lady Gaga', 'Bruno Mars', 'Adele', 'Justin Bieber',
-  'Sơn Tùng M-TP', 'Mỹ Tâm', 'Đen Vâu',
-];
+
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
@@ -37,19 +33,39 @@ export default function ProfilePage() {
   // Genres & artists (editable)
   const [genres,    setGenres]    = useState(user?.onboarding_preferences?.favorite_genres  ?? []);
   const [artists,   setArtists]   = useState(user?.onboarding_preferences?.favorite_artists ?? []);
-  const [artistQ,   setArtistQ]   = useState('');
-  const [editPrefs, setEditPrefs] = useState(false);
+  const [artistSuggestions, setArtistSuggestions] = useState([]);
+  const [artistSearching,   setArtistSearching]   = useState(false);
+  const [artistQ,           setArtistQ]           = useState('');
+  const [editPrefs,         setEditPrefs]         = useState(false);
+  const artistDebounce = useRef(null);
 
   const [msg,     setMsg]     = useState('');
   const [loading, setLoading] = useState(false);
 
   const toggleGenre  = (id)   => setGenres(p  => p.includes(id)   ? p.filter(g => g !== id)   : [...p, id]);
-  const toggleArtist = (name) => setArtists(p => p.includes(name) ? p.filter(a => a !== name) : [...p, name]);
-  const addCustomArtist = () => {
-    const name = artistQ.trim();
+
+  // Search artist từ DB khi user gõ
+  const handleArtistInput = useCallback((val) => {
+    setArtistQ(val);
+    if (artistDebounce.current) clearTimeout(artistDebounce.current);
+    if (!val.trim()) { setArtistSuggestions([]); return; }
+    artistDebounce.current = setTimeout(async () => {
+      setArtistSearching(true);
+      try {
+        const res = await tracksApi.artists(val, 8);
+        const list = Array.isArray(res.data) ? res.data : [];
+        setArtistSuggestions(list.map(a => a.artist).filter(a => !artists.includes(a)));
+      } catch { setArtistSuggestions([]); }
+      finally { setArtistSearching(false); }
+    }, 300);
+  }, [artists]);
+
+  const addArtistFromDB = (name) => {
     if (name && !artists.includes(name)) setArtists(p => [...p, name]);
     setArtistQ('');
+    setArtistSuggestions([]);
   };
+
 
   const handleSaveDemo = async (e) => {
     e.preventDefault();
@@ -77,11 +93,9 @@ export default function ProfilePage() {
     finally { setLoading(false); }
   };
 
-  const avatar  = (user?.username ?? 'U')[0].toUpperCase();
-  const mood    = user?.onboarding_preferences?.mood;
-  const filteredSuggestions = POPULAR_ARTISTS.filter(
-    a => a.toLowerCase().includes(artistQ.toLowerCase()) && !artists.includes(a)
-  );
+  const avatar = (user?.username ?? 'U')[0].toUpperCase();
+  const mood   = user?.onboarding_preferences?.mood;
+
 
   return (
     <div className="fade-in">
@@ -202,100 +216,100 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Artist search */}
+            {/* Artist search — DB autocomplete */}
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 12, letterSpacing: '0.05em' }}>
-                SEARCH ARTISTS ({artists.length} selected)
+                TÌM NGHỆ SĨ TRONG DATABASE ({artists.length} đã chọn)
               </div>
 
-              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                <input
-                  className="form-input"
-                  placeholder="Type an artist name to search or add…"
-                  value={artistQ}
-                  onChange={e => setArtistQ(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomArtist(); } }}
-                  style={{ flex: 1 }}
-                />
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={addCustomArtist}
-                  disabled={!artistQ.trim()}
-                  style={{ whiteSpace: 'nowrap' }}
-                >
-                  + Add
-                </button>
-              </div>
-
-              {/* Dropdown suggestions */}
-              {artistQ && filteredSuggestions.length > 0 && (
-                <div style={{
-                  background: 'var(--bg-base)', border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)', marginBottom: 12,
-                  maxHeight: 160, overflowY: 'auto',
-                }}>
-                  {filteredSuggestions.slice(0, 8).map(a => (
-                    <div
-                      key={a}
-                      onClick={() => { toggleArtist(a); setArtistQ(''); }}
-                      style={{
-                        padding: '9px 14px', cursor: 'pointer',
-                        borderBottom: '1px solid var(--border)',
-                        fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 8,
-                      }}
-                      className="artist-suggestion-item"
-                    >
-                      <span>🎤</span> {a}
-                    </div>
-                  ))}
+              <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                  <input
+                    className="form-input"
+                    placeholder="Gõ tên nghệ sĩ để tìm trong database..."
+                    value={artistQ}
+                    onChange={e => handleArtistInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && artistSuggestions.length > 0) {
+                        e.preventDefault();
+                        addArtistFromDB(artistSuggestions[0]);
+                      }
+                    }}
+                    style={{ flex: 1 }}
+                    autoComplete="off"
+                  />
+                  {artistSearching && (
+                    <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', paddingRight: 4 }}>
+                      ⟳
+                    </span>
+                  )}
                 </div>
-              )}
 
-              {/* Popular artists grid (when not searching) */}
-              {!artistQ && (
-                <div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
-                    POPULAR — click to select:
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {POPULAR_ARTISTS.map(a => (
-                      <button
+                {/* Hint */}
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                  Chỉ có thể chọn nghệ sĩ tồn tại trong hệ thống · Hỗ trợ tìm không dấu (vd: "son tung")
+                </div>
+
+                {/* DB Suggestions dropdown */}
+                {artistQ && (
+                  <div style={{
+                    background: '#1e1e1e', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)', marginBottom: 12,
+                    maxHeight: 200, overflowY: 'auto',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  }}>
+                    {artistSuggestions.length > 0 ? artistSuggestions.map(a => (
+                      <div
                         key={a}
-                        onClick={() => toggleArtist(a)}
+                        onClick={() => addArtistFromDB(a)}
                         style={{
-                          padding: '5px 12px', borderRadius: 20, border: '1px solid',
-                          cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500,
-                          transition: 'all 0.15s',
-                          borderColor: artists.includes(a) ? '#6c63ff' : 'var(--border)',
-                          background:  artists.includes(a) ? '#6c63ff' : 'var(--bg-elevated)',
-                          color:       artists.includes(a) ? '#fff'    : 'var(--text-secondary)',
+                          padding: '10px 14px', cursor: 'pointer',
+                          borderBottom: '1px solid var(--border)',
+                          fontSize: '0.85rem', display: 'flex', alignItems: 'center',
+                          justifyContent: 'space-between', gap: 8,
+                          transition: 'background 0.15s',
                         }}
+                        className="artist-suggestion-item"
                       >
-                        {artists.includes(a) ? '✓ ' : ''}{a}
-                      </button>
-                    ))}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          🎤 <strong>{a}</strong>
+                        </span>
+                        <span style={{
+                          fontSize: '0.68rem', fontWeight: 700,
+                          background: 'rgba(29,185,84,0.15)', color: 'var(--accent)',
+                          borderRadius: 20, padding: '2px 8px',
+                        }}>
+                          Có trong DB
+                        </span>
+                      </div>
+                    )) : !artistSearching ? (
+                      <div style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: '0.83rem' }}>
+                        Không tìm thấy nghệ sĩ nào trong database
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Selected artists chips */}
               {artists.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ fontSize: '0.72rem', color: '#6c63ff', fontWeight: 700, marginBottom: 8 }}>
-                    ✓ SELECTED ARTISTS:
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, marginBottom: 8 }}>
+                    ✓ ĐÃ CHỌN:
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {artists.map(a => (
                       <div key={a} style={{
                         display: 'flex', alignItems: 'center', gap: 5,
-                        background: '#6c63ff', color: '#fff',
+                        background: 'rgba(29,185,84,0.15)', color: 'var(--accent)',
+                        border: '1px solid rgba(29,185,84,0.4)',
                         borderRadius: 20, padding: '4px 12px',
                         fontSize: '0.78rem', fontWeight: 600,
                       }}>
                         {a}
                         <span
-                          onClick={() => toggleArtist(a)}
-                          style={{ cursor: 'pointer', opacity: 0.8, fontWeight: 700 }}
+                          onClick={() => setArtists(p => p.filter(x => x !== a))}
+                          style={{ cursor: 'pointer', opacity: 0.7, fontWeight: 700, marginLeft: 2 }}
                         >×</span>
                       </div>
                     ))}

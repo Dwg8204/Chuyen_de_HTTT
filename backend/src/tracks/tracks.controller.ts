@@ -8,17 +8,31 @@ export class TracksController {
   constructor(private tracksService: TracksService) {}
 
   @Get('search')
-  search(@Query('q') q: string, @Query('limit') limit = '20') {
-    return this.tracksService.search(q, parseInt(limit));
+  search(
+    @Query('q') q: string,
+    @Query('limit') limit = '20',
+    @Query('genre') genre?: string,
+  ) {
+    return this.tracksService.search(q, parseInt(limit), genre);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.tracksService.findById(id);
+  @Get('genres')
+  getGenres() {
+    return this.tracksService.findDistinctGenres();
+  }
+
+  @Get('artists')
+  getArtists(@Query('q') q: string, @Query('limit') limit = '10') {
+    return this.tracksService.findArtists(q, parseInt(limit));
   }
 
   @Get(':id/itunes-preview')
   getPreview(@Param('id') id: string) {
     return this.tracksService.getItunesPreview(id);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.tracksService.findById(id);
   }
 }

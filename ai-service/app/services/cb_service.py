@@ -24,7 +24,7 @@ async def _ensure_cache():
     ids, vecs = [], []
     async for doc in cursor:
         v = doc.get("content_vector")
-        if v and len(v) == 7:
+        if v and len(v) >= 7:    # hỗ trợ cả vector 7D (cũ) lẫn 12D (mới)
             ids.append(str(doc["_id"]))
             vecs.append(v)
 
@@ -38,7 +38,7 @@ async def _ensure_cache():
     norms = np.linalg.norm(_vectors, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
     _vectors /= norms
-    log.info(f"Cached {len(_track_ids)} content vectors")
+    log.info(f"Cached {len(_track_ids)} content vectors | dim={_vectors.shape[1]}")
 
 
 def _cosine_similarities(query_vec: list[float]) -> np.ndarray:

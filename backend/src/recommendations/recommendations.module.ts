@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { RecommendationsService } from './recommendations.service';
 import { RecommendationsController } from './recommendations.controller';
 import { TracksModule } from '../tracks/tracks.module';
+import { RedisModule } from '../common/redis/redis.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 
 @Module({
@@ -11,6 +12,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     HttpModule,
     TracksModule,
+    RedisModule,
   ],
   controllers: [RecommendationsController],
   providers: [RecommendationsService],

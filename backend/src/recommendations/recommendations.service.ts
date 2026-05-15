@@ -18,6 +18,7 @@ export class RecommendationsService {
     private tracksService: TracksService,
   ) {}
 
+  // ── Hybrid (trang chủ) ─────────────────────────────────────────────────────
   async getHybridRecommendations(userId: string) {
     const recentIds = await this.redisService.getRecentTracks(userId);
     const user = await this.userModel.findById(userId);
@@ -25,7 +26,6 @@ export class RecommendationsService {
     let trackIds: string[] = [];
 
     if (recentIds.length > 0) {
-      // Try hybrid recommend
       try {
         const res = await firstValueFrom(
           this.httpService.get(`${this.aiUrl}/ai/hybrid-recommend`, {
@@ -38,7 +38,6 @@ export class RecommendationsService {
     }
 
     if (trackIds.length === 0) {
-      // Cold-start fallback
       const genres = user?.onboarding_preferences?.favorite_genres ?? [];
       try {
         const res = await firstValueFrom(
@@ -52,22 +51,80 @@ export class RecommendationsService {
     }
 
     if (trackIds.length === 0) {
-      const popular = await this.tracksService.findPopular(30);
-      return popular;
+      return this.tracksService.findPopular(30);
     }
 
-    // Fetch full track metadata
     const tracks = await this.tracksService.findByIds(trackIds);
-    // Preserve AI ordering
     const map = new Map(tracks.map((t) => [t._id.toString(), t]));
     return trackIds.map((id) => map.get(id)).filter(Boolean);
   }
 
-  async getSimilarTracks(trackId: string, recentIds: string[] = []) {
+  // ── Collaborative Filtering only (tab Collab Picks) ───────────────────────
+  async getCollabRecommendations(userId: string) {
+    let trackIds: string[] = [];
+
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(`${this.aiUrl}/ai/als-recommend`, {
+          params: { user_id: userId, top_k: 30 },
+          timeout: 10000,
+        }),
+      );
+      trackIds = res.data?.track_ids ?? [];
+    } catch { /* fallback popular */ }
+
+    if (trackIds.length === 0) {
+      return this.tracksService.findPopular(30);
+    }
+
+    const tracks = await this.tracksService.findByIds(trackIds);
+    const map = new Map(tracks.map((t) => [t._id.toString(), t]));
+    return trackIds.map((id) => map.get(id)).filter(Boolean);
+  }
+
+  // ── Content-Based only (tab Taste Match) ──────────────────────────────────
+  async getContentRecommendations(userId: string) {
+    const recentIds = await this.redisService.getRecentTracks(userId);
+    const user = await this.userModel.findById(userId);
+    const genres = user?.onboarding_preferences?.favorite_genres ?? [];
+
+    let trackIds: string[] = [];
+
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(`${this.aiUrl}/ai/content-recommend`, {
+          params: {
+            user_id: userId,
+            recent_tracks: recentIds.join(','),
+            genres: genres.join(','),
+            top_k: 30,
+          },
+          timeout: 10000,
+        }),
+      );
+      trackIds = res.data?.track_ids ?? [];
+    } catch { /* fallback popular */ }
+
+    if (trackIds.length === 0) {
+      return this.tracksService.findPopular(30);
+    }
+
+    const tracks = await this.tracksService.findByIds(trackIds);
+    const map = new Map(tracks.map((t) => [t._id.toString(), t]));
+    return trackIds.map((id) => map.get(id)).filter(Boolean);
+  }
+
+  // ── Similar tracks (popup khi nghe, dùng hybrid) ──────────────────────────
+  async getSimilarTracks(trackId: string, userId: string, recentIds: string[] = []) {
     try {
       const res = await firstValueFrom(
         this.httpService.get(`${this.aiUrl}/ai/content-similar`, {
-          params: { track_id: trackId, top_k: 5, exclude: recentIds.join(',') },
+          params: {
+            track_id: trackId,
+            user_id: userId,
+            top_k: 5,
+            exclude: recentIds.join(','),
+          },
           timeout: 8000,
         }),
       );

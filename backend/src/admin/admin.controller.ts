@@ -20,6 +20,11 @@ export class AdminController {
     return this.adminService.triggerTraining();
   }
 
+  @Get('train-status')
+  trainStatus() {
+    return this.adminService.getTrainStatus();
+  }
+
   @Get('evaluate')
   evaluate() {
     return this.adminService.runEvaluation();

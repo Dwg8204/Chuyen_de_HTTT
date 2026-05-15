@@ -34,8 +34,8 @@ BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH  = os.path.join(BASE_DIR, "..", "data", "processed", "interactions.json")
 
 # Ngưỡng lọc (giống test.py)
-MIN_USER_UNIQUE_TRACKS = 0    # user có >= N bài khác nhau
-MIN_ITEM_PLAYS         = 0    # item có tổng plays >= N
+MIN_USER_UNIQUE_TRACKS = 30   # user có >= N bài khác nhau
+MIN_ITEM_PLAYS         = 30    # item có tổng plays >= N
 
 BM25_B = 0.8   # length normalization (cố định)
 

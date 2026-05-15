@@ -69,14 +69,38 @@ export default function AdminDashboard() {
   }, []);
 
   const handleTrain = async () => {
-    setTraining(true); setMsg('');
+    setTraining(true); setMsg('⏳ Training started in background...');
     try {
-      const r = await adminApi.triggerTraining();
-      const d = r.data;
-      setMsg(`✅ ALS Training complete! ${d.users_processed} users processed in ${d.duration_seconds}s`);
+      await adminApi.triggerTraining();
+      // Poll /ai/train/status until done
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const statusRes = await adminApi.trainStatus();
+          const s = statusRes.data;
+          if (s.status === 'done') {
+            clearInterval(poll);
+            setTraining(false);
+            const r = s.result ?? {};
+            setMsg(`✅ ALS Training complete! ${r.users_processed ?? '?'} users | ${r.items ?? '?'} items | ${r.duration_seconds ?? '?'}s`);
+          } else if (s.status === 'error') {
+            clearInterval(poll);
+            setTraining(false);
+            setMsg(`❌ Training failed: ${s.message}`);
+          } else if (attempts > 120) { // 6 phút timeout
+            clearInterval(poll);
+            setTraining(false);
+            setMsg('⚠️ Training is still running in background (timeout polling). Check server logs.');
+          } else {
+            setMsg(`⏳ Training in progress... (${attempts * 3}s elapsed)`);
+          }
+        } catch { /* ignore poll errors */ }
+      }, 3000);
     } catch (e) {
       setMsg(`❌ Training failed: ${e.response?.data?.message ?? e.message}`);
-    } finally { setTraining(false); }
+      setTraining(false);
+    }
   };
 
   const handleCfEval = async () => {
